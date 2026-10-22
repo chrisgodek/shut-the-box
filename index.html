@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Shut the Box</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #f6f3ee; --text: #1a1a1a; --muted: #6b6359; --link: #1a5fb4;
+      --wood: #8a5a33; --wood-dark: #5e3a1f; --felt: #2f6b4f; --felt-dark: #23533c;
+      --tile: #f3e3c3; --tile-text: #3b2614; --tile-shut: #6e4a2c;
+      --sel: #f2b84b; --die: #fffdf8; --pip: #1a1a1a; --btn: #1a1a1a; --btn-text: #fff;
+      --panel: #fff; --rule: #e2dbd0;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #141210; --text: #ece6dd; --muted: #a39a8e; --link: #78aeed;
+        --wood: #6d4527; --wood-dark: #3f2714; --felt: #24543e; --felt-dark: #1a3f2e;
+        --tile: #e9d6b0; --tile-shut: #4d321c;
+        --btn: #ece6dd; --btn-text: #141210; --panel: #1d1a17; --rule: #34302b;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font: 16px/1.5 "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    }
+    main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
+    header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    h1 { font-size: 1.8rem; font-weight: 600; margin: 0; letter-spacing: -0.02em; }
+    a { color: var(--link); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .back { font-size: 0.9rem; }
+
+    /* The box */
+    .box {
+      margin: 20px 0 16px; padding: 14px; border-radius: 14px;
+      background: linear-gradient(180deg, var(--wood), var(--wood-dark));
+      box-shadow: 0 6px 18px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.15);
+    }
+    .tiles { display: grid; gap: 6px; grid-template-columns: repeat(var(--n, 9), 1fr); perspective: 600px; }
+    .tile {
+      appearance: none; border: 0; cursor: pointer; font: inherit;
+      aspect-ratio: 1 / 1.6; border-radius: 6px; padding: 0;
+      background: var(--tile); color: var(--tile-text);
+      font-size: clamp(1rem, 4.2vw, 1.9rem); font-weight: 600;
+      box-shadow: 0 3px 0 #b49870, 0 4px 8px rgba(0,0,0,.25);
+      transform-origin: bottom center; transition: transform .25s ease, background .15s, box-shadow .15s;
+    }
+    .tile:disabled { cursor: default; }
+    .tile.selected { background: var(--sel); transform: translateY(-4px); box-shadow: 0 7px 0 #b98320, 0 8px 12px rgba(0,0,0,.3); }
+    .tile.shut {
+      background: var(--tile-shut); color: transparent; box-shadow: inset 0 2px 6px rgba(0,0,0,.4);
+      transform: scaleY(.22);
+    }
+    .tile.hint:not(.selected):not(.shut) { outline: 3px dashed var(--sel); outline-offset: -5px; }
+    .tile:focus-visible { outline: 3px solid var(--link); outline-offset: 2px; }
+
+    .felt {
+      margin-top: 14px; border-radius: 10px; min-height: 150px;
+      background: radial-gradient(ellipse at center, var(--felt), var(--felt-dark));
+      box-shadow: inset 0 3px 12px rgba(0,0,0,.45);
+      display: flex; align-items: center; justify-content: center; gap: 22px; padding: 20px;
+    }
+    .die {
+      width: 78px; height: 78px; border-radius: 14px; background: var(--die);
+      box-shadow: 0 4px 10px rgba(0,0,0,.35), inset 0 -3px 0 rgba(0,0,0,.08);
+      display: grid; grid-template: repeat(3, 1fr) / repeat(3, 1fr); padding: 10px;
+    }
+    .die.rolling { animation: tumble .45s ease-out; }
+    @keyframes tumble {
+      0% { transform: rotate(-200deg) scale(.6) translateY(-30px); }
+      70% { transform: rotate(15deg) scale(1.05); }
+      100% { transform: rotate(0) scale(1); }
+    }
+    .pip { width: 14px; height: 14px; border-radius: 50%; background: var(--pip); place-self: center; visibility: hidden; }
+    .pip.on { visibility: visible; }
+    .felt-msg { color: #e8f2ec; opacity: .85; text-align: center; }
+
+    /* Status + controls */
+    .status { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; min-height: 2.6em; }
+    .msg { font-weight: 600; }
+    .msg.win { color: #2f8a57; }
+    .msg.lose { color: #c0392b; }
+    .sum { color: var(--muted); }
+    .controls { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 18px; }
+    button.btn {
+      appearance: none; font: inherit; font-weight: 600; cursor: pointer;
+      padding: 10px 18px; border-radius: 8px; border: 2px solid var(--btn);
+      background: var(--btn); color: var(--btn-text);
+    }
+    button.btn.secondary { background: transparent; color: var(--text); }
+    button.btn:disabled { opacity: .35; cursor: default; }
+
+    .ways { margin: 0 0 18px; color: var(--muted); font-size: .92rem; }
+    .ways button {
+      appearance: none; font: inherit; cursor: pointer; margin: 3px 4px 3px 0;
+      padding: 2px 8px; border-radius: 6px; border: 1px solid var(--rule); background: var(--panel); color: var(--text);
+    }
+    .ways button:hover { border-color: var(--sel); }
+
+    .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 600px) { .panels { grid-template-columns: 1fr; } .tiles { gap: 3px; } .die { width: 64px; height: 64px; padding: 8px; } .pip { width: 11px; height: 11px; } }
+    .panel { background: var(--panel); border: 1px solid var(--rule); border-radius: 10px; padding: 14px 16px; }
+    .panel h2 { font-size: .8rem; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 8px; }
+    .panel label { display: flex; align-items: center; gap: 8px; margin: 6px 0; cursor: pointer; }
+    .panel select { font: inherit; padding: 2px 4px; }
+    .stats { display: grid; grid-template-columns: auto 1fr; gap: 2px 14px; margin: 0; }
+    .stats dt { color: var(--muted); }
+    .stats dd { margin: 0; font-weight: 600; }
+    details { margin-top: 16px; }
+    summary { cursor: pointer; font-weight: 600; }
+    details ol { padding-left: 1.3em; }
+    .kbd { color: var(--muted); font-size: .85rem; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Shut the Box</h1>
+      <span class="back"><a href="/">← Chris Godek</a> · <a href="updates.html">What's new</a></span>
+    </header>
+
+    <div class="box">
+      <div class="tiles" id="tiles"></div>
+      <div class="felt" id="felt"></div>
+    </div>
+
+    <div class="status">
+      <span class="msg" id="msg"></span>
+      <span class="sum" id="sum"></span>
+    </div>
+
+    <div class="controls">
+      <button class="btn" id="roll">Roll</button>
+      <button class="btn secondary" id="roll1">Roll 1 die</button>
+      <button class="btn" id="shut">Shut tiles</button>
+      <button class="btn secondary" id="newgame">New game</button>
+    </div>
+
+    <div class="ways" id="ways" hidden></div>
+
+    <div class="panels">
+      <div class="panel">
+        <h2>Settings</h2>
+        <label>Tiles
+          <select id="setTiles">
+            <option value="9">1–9</option>
+            <option value="10">1–10</option>
+            <option value="12">1–12</option>
+          </select>
+        </label>
+        <label><input type="checkbox" id="setOneDie" checked> Allow one die once tiles above 6 are shut</label>
+        <label><input type="checkbox" id="setWays"> Show ways to make the roll</label>
+      </div>
+      <div class="panel">
+        <h2>Stats <span id="statsLabel"></span></h2>
+        <dl class="stats">
+          <dt>Games</dt><dd id="stGames">0</dd>
+          <dt>Boxes shut</dt><dd id="stShut">0</dd>
+          <dt>Best score</dt><dd id="stBest">–</dd>
+          <dt>Average</dt><dd id="stAvg">–</dd>
+        </dl>
+      </div>
+    </div>
+
+    <details>
+      <summary>How to play</summary>
+      <ol>
+        <li>Roll the dice.</li>
+        <li>Shut any open tiles that add up to the roll. Roll 8? Shut the 8, or 7 + 1, or 5 + 2 + 1, and so on.</li>
+        <li>Keep rolling and shutting. When no open tiles can make the roll, the game ends.</li>
+        <li>Your score is the sum of the tiles still open. Lower is better. Shut every tile and you've <b>shut the box</b> (score 0).</li>
+      </ol>
+      <p class="kbd">Keyboard: number keys pick tiles (0 = 10, - = 11, = = 12), Space or Enter rolls or shuts, N starts a new game.</p>
+    </details>
+  </main>
+
+  <script>
+    var PIPS = { 1: [4], 2: [0, 8], 3: [0, 4, 8], 4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8] };
+    var $ = function (id) { return document.getElementById(id); };
+
+    function load(key, fallback) {
+      try { var v = localStorage.getItem('stb.' + key); return v === null ? fallback : JSON.parse(v); } catch (e) { return fallback; }
+    }
+    function save(key, value) {
+      try { localStorage.setItem('stb.' + key, JSON.stringify(value)); } catch (e) {}
+    }
+
+    var settings = load('settings', { tiles: 9, oneDie: true, ways: false });
+    var game; // { n, open: {tile: bool}, selected: Set, dice: [], phase: 'roll' | 'pick' | 'over' }
+
+    function openTiles() {
+      var list = [];
+      for (var t = 1; t <= game.n; t++) if (game.open[t]) list.push(t);
+      return list;
+    }
+    function remaining() { return openTiles().reduce(function (a, b) { return a + b; }, 0); }
+    function rollTotal() { return game.dice.reduce(function (a, b) { return a + b; }, 0); }
+    function selectedSum() { var s = 0; game.selected.forEach(function (t) { s += t; }); return s; }
+
+    // Every set of open tiles that adds up to target, smallest sets first.
+    function waysToMake(target) {
+      var tiles = openTiles(), out = [];
+      (function walk(i, left, picked) {
+        if (left === 0) { out.push(picked.slice()); return; }
+        for (var j = i; j < tiles.length && tiles[j] <= left; j++) {
+          picked.push(tiles[j]); walk(j + 1, left - tiles[j], picked); picked.pop();
+        }
+      })(0, target, []);
+      out.forEach(function (w) { w.reverse(); });
+      return out.sort(function (a, b) { return a.length - b.length || b[0] - a[0]; });
+    }
+
+    function canUseOneDie() {
+      return settings.oneDie && openTiles().every(function (t) { return t <= 6; });
+    }
+
+    function newGame() {
+      game = { n: settings.tiles, open: {}, selected: new Set(), dice: [], phase: 'roll' };
+      for (var t = 1; t <= game.n; t++) game.open[t] = true;
+      buildTiles();
+      render();
+    }
+
+    function buildTiles() {
+      var el = $('tiles');
+      el.style.setProperty('--n', game.n);
+      el.innerHTML = '';
+      for (var t = 1; t <= game.n; t++) {
+        var b = document.createElement('button');
+        b.className = 'tile';
+        b.textContent = t;
+        b.dataset.t = t;
+        b.addEventListener('click', function () { toggle(+this.dataset.t); });
+        el.appendChild(b);
+      }
+    }
+
+    function roll(count) {
+      if (game.phase !== 'roll') return;
+      game.dice = [];
+      for (var i = 0; i < count; i++) game.dice.push(1 + Math.floor(Math.random() * 6));
+      game.selected.clear();
+      game.phase = waysToMake(rollTotal()).length ? 'pick' : 'over';
+      if (game.phase === 'over') recordGame();
+      render(true);
+    }
+
+    function toggle(t) {
+      if (game.phase !== 'pick' || !game.open[t]) return;
+      if (game.selected.has(t)) game.selected.delete(t);
+      else if (selectedSum() + t <= rollTotal()) game.selected.add(t);
+      render();
+    }
+
+    function selectWay(way) {
+      if (game.phase !== 'pick') return;
+      game.selected = new Set(way);
+      render();
+    }
+
+    function shut() {
+      if (game.phase !== 'pick' || selectedSum() !== rollTotal()) return;
+      game.selected.forEach(function (t) { game.open[t] = false; });
+      game.selected.clear();
+      game.phase = 'roll';
+      if (remaining() === 0) { game.phase = 'over'; recordGame(); }
+      render();
+    }
+
+    function statsKey() { return 'stats' + game.n; }
+    function recordGame() {
+      var s = load(statsKey(), { games: 0, shut: 0, best: null, total: 0 });
+      var score = remaining();
+      s.games++; s.total += score;
+      if (score === 0) s.shut++;
+      if (s.best === null || score < s.best) s.best = score;
+      save(statsKey(), s);
+    }
+
+    function renderDie(value, animate) {
+      var d = document.createElement('div');
+      d.className = 'die' + (animate ? ' rolling' : '');
+      d.setAttribute('aria-label', 'Die showing ' + value);
+      for (var i = 0; i < 9; i++) {
+        var p = document.createElement('span');
+        p.className = 'pip' + (PIPS[value].indexOf(i) >= 0 ? ' on' : '');
+        d.appendChild(p);
+      }
+      return d;
+    }
+
+    function render(animate) {
+      var total = rollTotal(), ways = game.phase === 'pick' ? waysToMake(total) : [];
+      var hintTiles = new Set();
+      if (settings.ways) ways.forEach(function (w) { w.forEach(function (t) { hintTiles.add(t); }); });
+
+      document.querySelectorAll('.tile').forEach(function (b) {
+        var t = +b.dataset.t;
+        b.classList.toggle('shut', !game.open[t]);
+        b.classList.toggle('selected', game.selected.has(t));
+        b.classList.toggle('hint', hintTiles.has(t));
+        b.disabled = !game.open[t] || game.phase !== 'pick';
+        b.setAttribute('aria-label', 'Tile ' + t + (game.open[t] ? '' : ', shut') + (game.selected.has(t) ? ', selected' : ''));
+      });
+
+      var felt = $('felt');
+      felt.innerHTML = '';
+      if (game.dice.length && game.phase !== 'roll') {
+        game.dice.forEach(function (v) { felt.appendChild(renderDie(v, animate)); });
+      } else {
+        var m = document.createElement('div');
+        m.className = 'felt-msg';
+        m.textContent = game.phase === 'over' ? '' : 'Roll the dice';
+        felt.appendChild(m);
+      }
+
+      var msg = $('msg'), sum = $('sum');
+      msg.className = 'msg';
+      sum.textContent = '';
+      if (game.phase === 'roll') {
+        msg.textContent = remaining() === game.n * (game.n + 1) / 2 ? 'Roll to start.' : 'Nice. Roll again.';
+        sum.textContent = 'Open tiles total ' + remaining();
+      } else if (game.phase === 'pick') {
+        msg.textContent = 'You rolled ' + total + '. Pick tiles that add to ' + total + '.';
+        sum.textContent = 'Selected: ' + selectedSum() + ' / ' + total;
+      } else if (remaining() === 0) {
+        msg.textContent = 'You shut the box! Score: 0';
+        msg.classList.add('win');
+        felt.querySelector('.felt-msg') && (felt.querySelector('.felt-msg').textContent = '🎉 Box shut!');
+      } else {
+        msg.textContent = 'No way to make ' + total + '. Game over. Score: ' + remaining();
+        msg.classList.add('lose');
+      }
+
+      $('roll').disabled = game.phase !== 'roll';
+      $('roll').hidden = game.phase === 'over';
+      $('roll1').hidden = !canUseOneDie() || game.phase === 'over';
+      $('roll1').disabled = game.phase !== 'roll';
+      $('shut').disabled = game.phase !== 'pick' || selectedSum() !== total;
+      $('shut').hidden = game.phase === 'over';
+      $('newgame').className = 'btn' + (game.phase === 'over' ? '' : ' secondary');
+
+      var waysEl = $('ways');
+      waysEl.hidden = !(settings.ways && game.phase === 'pick');
+      if (!waysEl.hidden) {
+        waysEl.innerHTML = '';
+        waysEl.append(ways.length + ' way' + (ways.length === 1 ? '' : 's') + ' to make ' + total + ': ');
+        ways.forEach(function (w) {
+          var b = document.createElement('button');
+          b.textContent = w.join(' + ');
+          b.addEventListener('click', function () { selectWay(w); });
+          waysEl.appendChild(b);
+        });
+      }
+
+      renderStats();
+    }
+
+    function renderStats() {
+      var s = load(statsKey(), { games: 0, shut: 0, best: null, total: 0 });
+      $('statsLabel').textContent = '(1–' + game.n + ')';
+      $('stGames').textContent = s.games;
+      $('stShut').textContent = s.shut;
+      $('stBest').textContent = s.best === null ? '–' : s.best;
+      $('stAvg').textContent = s.games ? (s.total / s.games).toFixed(1) : '–';
+    }
+
+    $('roll').addEventListener('click', function () { roll(2); });
+    $('roll1').addEventListener('click', function () { roll(1); });
+    $('shut').addEventListener('click', shut);
+    $('newgame').addEventListener('click', newGame);
+
+    $('setTiles').value = settings.tiles;
+    $('setOneDie').checked = settings.oneDie;
+    $('setWays').checked = settings.ways;
+    $('setTiles').addEventListener('change', function () {
+      settings.tiles = +this.value; save('settings', settings); newGame();
+    });
+    $('setOneDie').addEventListener('change', function () { settings.oneDie = this.checked; save('settings', settings); render(); });
+    $('setWays').addEventListener('change', function () { settings.ways = this.checked; save('settings', settings); render(); });
+
+    document.addEventListener('keydown', function (e) {
+      if (e.metaKey || e.ctrlKey || e.altKey || /SELECT|INPUT/.test(e.target.tagName)) return;
+      var keyTile = { '0': 10, '-': 11, '=': 12 }[e.key] || (/^[1-9]$/.test(e.key) ? +e.key : 0);
+      if (keyTile) { toggle(keyTile); return; }
+      if (e.key === ' ' || e.key === 'Enter') {
+        if (e.target.tagName === 'BUTTON' && !e.target.classList.contains('tile')) return; // let buttons click normally
+        e.preventDefault();
+        if (game.phase === 'roll') roll(2);
+        else if (game.phase === 'pick') shut();
+        else newGame();
+      }
+      if (e.key === 'n' || e.key === 'N') newGame();
+    });
+
+    newGame();
+  </script>
+</body>
+</html>
