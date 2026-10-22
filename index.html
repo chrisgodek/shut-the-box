@@ -598,7 +598,7 @@
       if (!match || match.phase === 'aborted') return;
       var who = net.other || 'Your friend';
       var midRound = match.phase !== 'roundover';
-      abort(who + ' left the game' + (midRound ? ' in the middle of a round, so it counts as a forfeit. You win!' : '.'), !midRound);
+      abort(who + ' left the game' + (midRound ? ' in the middle of a round, so it counts as a forfeit. You win!' : '.'), true);
     }
 
     function abort(text, calm) {
