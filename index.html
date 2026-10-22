@@ -7,23 +7,26 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.5/peerjs.min.js"></script>
   <style>
     :root {
       --bg: #f6f3ee; --text: #1a1a1a; --muted: #6b6359; --link: #1a5fb4;
       --wood: #8a5a33; --wood-dark: #5e3a1f; --felt: #2f6b4f; --felt-dark: #23533c;
       --tile: #f3e3c3; --tile-text: #3b2614; --tile-shut: #6e4a2c;
       --sel: #f2b84b; --die: #fffdf8; --pip: #1a1a1a; --btn: #1a1a1a; --btn-text: #fff;
-      --panel: #fff; --rule: #e2dbd0;
+      --panel: #fff; --rule: #e2dbd0; --active: #fdf1d8; --win: #2f8a57; --bad: #c0392b;
     }
     @media (prefers-color-scheme: dark) {
       :root {
         --bg: #141210; --text: #ece6dd; --muted: #a39a8e; --link: #78aeed;
         --wood: #6d4527; --wood-dark: #3f2714; --felt: #24543e; --felt-dark: #1a3f2e;
         --tile: #e9d6b0; --tile-shut: #4d321c;
-        --btn: #ece6dd; --btn-text: #141210; --panel: #1d1a17; --rule: #34302b;
+        --btn: #ece6dd; --btn-text: #141210; --panel: #1d1a17; --rule: #34302b; --active: #3a2f1c;
+        --win: #5cc48a; --bad: #f07a6c;
       }
     }
     * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
     body {
       margin: 0; background: var(--bg); color: var(--text);
       font: 16px/1.5 "IBM Plex Mono", ui-monospace, Menlo, monospace;
@@ -35,13 +38,43 @@
     a:hover { text-decoration: underline; }
     .back { font-size: 0.9rem; }
 
+    /* Mode tabs */
+    .modes { display: flex; gap: 0; margin: 18px 0 0; border: 2px solid var(--btn); border-radius: 9px; overflow: hidden; width: fit-content; max-width: 100%; }
+    .modes button {
+      appearance: none; font: inherit; font-weight: 600; cursor: pointer; border: 0;
+      padding: 8px 14px; background: transparent; color: var(--text);
+    }
+    .modes button + button { border-left: 2px solid var(--btn); }
+    .modes button[aria-pressed="true"] { background: var(--btn); color: var(--btn-text); }
+
+    /* Setup + scoreboard */
+    .setup { margin: 18px 0; }
+    .setup .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 10px 0; }
+    .setup input[type=text] { font: inherit; padding: 6px 8px; border: 1px solid var(--rule); border-radius: 6px; background: var(--panel); color: var(--text); width: 14em; max-width: 100%; }
+    .setup select { font: inherit; padding: 4px; }
+    .setup .or { color: var(--muted); margin: 14px 0 4px; }
+    .note { color: var(--muted); font-size: .88rem; }
+    .netstatus { margin-top: 12px; }
+    .netstatus.bad { color: var(--bad); font-weight: 600; }
+    .share { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .share code { font: inherit; font-size: 1.6rem; font-weight: 600; letter-spacing: .15em; }
+    .share input { font: inherit; font-size: .85rem; padding: 6px 8px; border: 1px solid var(--rule); border-radius: 6px; background: var(--panel); color: var(--text); width: 22em; max-width: 100%; }
+
+    .scoreboard { margin: 18px 0 0; border-collapse: collapse; width: 100%; }
+    .scoreboard caption { text-align: left; font-size: .8rem; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); padding-bottom: 4px; }
+    .scoreboard th, .scoreboard td { text-align: left; padding: 4px 10px; border-bottom: 1px solid var(--rule); }
+    .scoreboard th { font-size: .8rem; color: var(--muted); font-weight: 600; }
+    .scoreboard td.num, .scoreboard th.num { text-align: right; }
+    .scoreboard tr.active td { background: var(--active); font-weight: 600; }
+    .scoreboard tr.leader td:first-child::after { content: " ★"; color: var(--sel); }
+
     /* The box */
     .box {
       margin: 20px 0 16px; padding: 14px; border-radius: 14px;
       background: linear-gradient(180deg, var(--wood), var(--wood-dark));
       box-shadow: 0 6px 18px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.15);
     }
-    .tiles { display: grid; gap: 6px; grid-template-columns: repeat(var(--n, 9), 1fr); perspective: 600px; }
+    .tiles { display: grid; gap: 6px; grid-template-columns: repeat(var(--n, 9), 1fr); }
     .tile {
       appearance: none; border: 0; cursor: pointer; font: inherit;
       aspect-ratio: 1 / 1.6; border-radius: 6px; padding: 0;
@@ -83,8 +116,8 @@
     /* Status + controls */
     .status { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; min-height: 2.6em; }
     .msg { font-weight: 600; }
-    .msg.win { color: #2f8a57; }
-    .msg.lose { color: #c0392b; }
+    .msg.win { color: var(--win); }
+    .msg.lose { color: var(--bad); }
     .sum { color: var(--muted); }
     .controls { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 18px; }
     button.btn {
@@ -100,10 +133,15 @@
       appearance: none; font: inherit; cursor: pointer; margin: 3px 4px 3px 0;
       padding: 2px 8px; border-radius: 6px; border: 1px solid var(--rule); background: var(--panel); color: var(--text);
     }
-    .ways button:hover { border-color: var(--sel); }
+    .ways button:disabled { cursor: default; }
+    .ways button:not(:disabled):hover { border-color: var(--sel); }
 
     .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-    @media (max-width: 600px) { .panels { grid-template-columns: 1fr; } .tiles { gap: 3px; } .die { width: 64px; height: 64px; padding: 8px; } .pip { width: 11px; height: 11px; } }
+    @media (max-width: 600px) {
+      .panels { grid-template-columns: 1fr; } .tiles { gap: 3px; }
+      .die { width: 64px; height: 64px; padding: 8px; } .pip { width: 11px; height: 11px; }
+      .modes button { padding: 8px 10px; font-size: .9rem; }
+    }
     .panel { background: var(--panel); border: 1px solid var(--rule); border-radius: 10px; padding: 14px 16px; }
     .panel h2 { font-size: .8rem; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 8px; }
     .panel label { display: flex; align-items: center; gap: 8px; margin: 6px 0; cursor: pointer; }
@@ -113,7 +151,7 @@
     .stats dd { margin: 0; font-weight: 600; }
     details { margin-top: 16px; }
     summary { cursor: pointer; font-weight: 600; }
-    details ol { padding-left: 1.3em; }
+    details ol, details ul { padding-left: 1.3em; }
     .kbd { color: var(--muted); font-size: .85rem; margin-top: 8px; }
   </style>
 </head>
@@ -124,24 +162,65 @@
       <span class="back"><a href="/">← Chris Godek</a> · <a href="updates.html">What's new</a></span>
     </header>
 
-    <div class="box">
-      <div class="tiles" id="tiles"></div>
-      <div class="felt" id="felt"></div>
+    <div class="modes" role="group" aria-label="Game mode">
+      <button data-mode="solo">Solo</button>
+      <button data-mode="local">Pass &amp; play</button>
+      <button data-mode="online">Play online</button>
     </div>
 
-    <div class="status">
-      <span class="msg" id="msg"></span>
-      <span class="sum" id="sum"></span>
-    </div>
+    <!-- Pass & play setup -->
+    <section class="setup" id="setupLocal" hidden>
+      <div class="row">
+        <label>Players
+          <select id="localCount"><option>2</option><option>3</option><option>4</option></select>
+        </label>
+      </div>
+      <div id="localNames"></div>
+      <div class="row"><button class="btn" id="localStart">Start game</button></div>
+      <p class="note">Take turns on this device. Each player plays a full box, then passes. Lowest score wins the round.</p>
+    </section>
 
-    <div class="controls">
-      <button class="btn" id="roll">Roll</button>
-      <button class="btn secondary" id="roll1">Roll 1 die</button>
-      <button class="btn" id="shut">Shut tiles</button>
-      <button class="btn secondary" id="newgame">New game</button>
-    </div>
+    <!-- Online setup -->
+    <section class="setup" id="setupOnline" hidden>
+      <div class="row"><label>Your name <input type="text" id="onlineName" maxlength="20"></label></div>
+      <div class="row"><button class="btn" id="hostBtn">Start a new game</button></div>
+      <p class="or">or join a friend's game:</p>
+      <div class="row">
+        <input type="text" id="joinCode" placeholder="Game code" maxlength="5" autocapitalize="characters" style="width:8em;text-transform:uppercase">
+        <button class="btn secondary" id="joinBtn">Join</button>
+      </div>
+      <div class="netstatus" id="netStatus"></div>
+      <p class="note">Two players, each on your own device. The dice are rolled together by both games so neither player can rig them, and each game checks every move the other makes.</p>
+    </section>
 
-    <div class="ways" id="ways" hidden></div>
+    <div id="play">
+      <table class="scoreboard" id="scoreboard" hidden>
+        <caption id="roundLabel"></caption>
+        <thead><tr><th>Player</th><th class="num">This round</th><th class="num">Wins</th></tr></thead>
+        <tbody id="scoreRows"></tbody>
+      </table>
+
+      <div class="box">
+        <div class="tiles" id="tiles"></div>
+        <div class="felt" id="felt"></div>
+      </div>
+
+      <div class="status">
+        <span class="msg" id="msg"></span>
+        <span class="sum" id="sum"></span>
+      </div>
+
+      <div class="controls">
+        <button class="btn" id="roll">Roll</button>
+        <button class="btn secondary" id="roll1">Roll 1 die</button>
+        <button class="btn" id="shut">Shut tiles</button>
+        <button class="btn" id="advance"></button>
+        <button class="btn secondary" id="newgame">New game</button>
+        <button class="btn secondary" id="leave">Leave game</button>
+      </div>
+
+      <div class="ways" id="ways" hidden></div>
+    </div>
 
     <div class="panels">
       <div class="panel">
@@ -155,9 +234,10 @@
         </label>
         <label><input type="checkbox" id="setOneDie" checked> Allow one die once tiles above 6 are shut</label>
         <label><input type="checkbox" id="setWays"> Show ways to make the roll</label>
+        <p class="note" id="settingsNote" hidden>Tiles and the one-die rule are locked during a game.</p>
       </div>
-      <div class="panel">
-        <h2>Stats <span id="statsLabel"></span></h2>
+      <div class="panel" id="statsPanel">
+        <h2>Solo stats <span id="statsLabel"></span></h2>
         <dl class="stats">
           <dt>Games</dt><dd id="stGames">0</dd>
           <dt>Boxes shut</dt><dd id="stShut">0</dd>
@@ -172,15 +252,19 @@
       <ol>
         <li>Roll the dice.</li>
         <li>Shut any open tiles that add up to the roll. Roll 8? Shut the 8, or 7 + 1, or 5 + 2 + 1, and so on.</li>
-        <li>Keep rolling and shutting. When no open tiles can make the roll, the game ends.</li>
+        <li>Keep rolling and shutting. When no open tiles can make the roll, your turn ends.</li>
         <li>Your score is the sum of the tiles still open. Lower is better. Shut every tile and you've <b>shut the box</b> (score 0).</li>
+        <li>With friends, everyone plays a full box in turn. Lowest score wins the round.</li>
       </ol>
-      <p class="kbd">Keyboard: number keys pick tiles (0 = 10, - = 11, = = 12), Space or Enter rolls or shuts, N starts a new game.</p>
+      <p class="kbd">Keyboard: number keys pick tiles (0 = 10, - = 11, = = 12), Space or Enter rolls or shuts, N starts a new solo game.</p>
     </details>
   </main>
 
   <script>
     var PIPS = { 1: [4], 2: [0, 8], 3: [0, 4, 8], 4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8] };
+    var PROTOCOL = 1;
+    var PEER_PREFIX = 'chrisgodek-shutthebox-';
+    var CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
     var $ = function (id) { return document.getElementById(id); };
 
     function load(key, fallback) {
@@ -191,16 +275,26 @@
     }
 
     var settings = load('settings', { tiles: 9, oneDie: true, ways: false });
-    var game; // { n, open: {tile: bool}, selected: Set, dice: [], phase: 'roll' | 'pick' | 'over' }
+    var names = load('names', ['Player 1', 'Player 2', 'Player 3', 'Player 4']);
+    var mode = 'solo';
+    // match: { players: [{name, wins, score}], round, turn, n, oneDie, rolls, phase, alert }
+    // phase: roll | pick | turnover | roundover | over (solo) | aborted (online)
+    var match = null;
+    var board = null; // { open: {tile: bool}, selected: Set, dice: [] }
+    var me = 0;       // index of this device's player in online games
+    var net = null;   // { peer, conn, host, code, pending, remote, queue, other }
+
+    /* ---------- Board helpers ---------- */
 
     function openTiles() {
       var list = [];
-      for (var t = 1; t <= game.n; t++) if (game.open[t]) list.push(t);
+      for (var t = 1; t <= match.n; t++) if (board.open[t]) list.push(t);
       return list;
     }
-    function remaining() { return openTiles().reduce(function (a, b) { return a + b; }, 0); }
-    function rollTotal() { return game.dice.reduce(function (a, b) { return a + b; }, 0); }
-    function selectedSum() { var s = 0; game.selected.forEach(function (t) { s += t; }); return s; }
+    function sum(list) { return list.reduce(function (a, b) { return a + b; }, 0); }
+    function remaining() { return sum(openTiles()); }
+    function rollTotal() { return sum(board.dice); }
+    function selectedSum() { return sum(Array.from(board.selected)); }
 
     // Every set of open tiles that adds up to target, smallest sets first.
     function waysToMake(target) {
@@ -215,71 +309,450 @@
       return out.sort(function (a, b) { return a.length - b.length || b[0] - a[0]; });
     }
 
-    function canUseOneDie() {
-      return settings.oneDie && openTiles().every(function (t) { return t <= 6; });
+    function legalRollCount(count) {
+      if (count === 2) return true;
+      return count === 1 && match.oneDie && openTiles().every(function (t) { return t <= 6; });
     }
 
-    function newGame() {
-      game = { n: settings.tiles, open: {}, selected: new Set(), dice: [], phase: 'roll' };
-      for (var t = 1; t <= game.n; t++) game.open[t] = true;
+    function legalShut(tiles) {
+      if (match.phase !== 'pick' || !Array.isArray(tiles) || !tiles.length) return false;
+      var seen = {};
+      for (var i = 0; i < tiles.length; i++) {
+        var t = tiles[i];
+        if (!Number.isInteger(t) || !board.open[t] || seen[t]) return false;
+        seen[t] = true;
+      }
+      return sum(tiles) === rollTotal();
+    }
+
+    /* ---------- Match flow (shared by every mode) ---------- */
+
+    function startMatch(playerNames, n, oneDie) {
+      match = {
+        players: playerNames.map(function (name) { return { name: name, wins: 0, score: null }; }),
+        round: 0, turn: 0, n: n, oneDie: oneDie, rolls: 0, phase: 'roll', alert: ''
+      };
       buildTiles();
+      startRound(1);
+    }
+
+    // Starting player rotates each round.
+    function playerAt(turn) { return (match.round - 1 + turn) % match.players.length; }
+    function activeIdx() { return playerAt(match.turn); }
+    function nextIdx() { return playerAt(match.turn + 1); }
+    function multi() { return mode !== 'solo'; }
+
+    function startRound(r) {
+      match.round = r;
+      match.turn = 0;
+      match.players.forEach(function (p) { p.score = null; });
+      startTurn();
+    }
+
+    function startTurn() {
+      board = { open: {}, selected: new Set(), dice: [] };
+      for (var t = 1; t <= match.n; t++) board.open[t] = true;
+      match.phase = 'roll';
       render();
     }
 
-    function buildTiles() {
-      var el = $('tiles');
-      el.style.setProperty('--n', game.n);
-      el.innerHTML = '';
-      for (var t = 1; t <= game.n; t++) {
-        var b = document.createElement('button');
-        b.className = 'tile';
-        b.textContent = t;
-        b.dataset.t = t;
-        b.addEventListener('click', function () { toggle(+this.dataset.t); });
-        el.appendChild(b);
-      }
-    }
-
-    function roll(count) {
-      if (game.phase !== 'roll') return;
-      game.dice = [];
-      for (var i = 0; i < count; i++) game.dice.push(1 + Math.floor(Math.random() * 6));
-      game.selected.clear();
-      game.phase = waysToMake(rollTotal()).length ? 'pick' : 'over';
-      if (game.phase === 'over') recordGame();
+    function applyRoll(dice) {
+      board.dice = dice;
+      board.selected.clear();
+      match.rolls++;
+      if (waysToMake(rollTotal()).length) match.phase = 'pick';
+      else endTurn();
       render(true);
     }
 
-    function toggle(t) {
-      if (game.phase !== 'pick' || !game.open[t]) return;
-      if (game.selected.has(t)) game.selected.delete(t);
-      else if (selectedSum() + t <= rollTotal()) game.selected.add(t);
+    function applyShut(tiles) {
+      tiles.forEach(function (t) { board.open[t] = false; });
+      board.selected.clear();
+      if (remaining() === 0) endTurn();
+      else { match.phase = 'roll'; render(); }
+    }
+
+    function endTurn() {
+      match.players[activeIdx()].score = remaining();
+      if (!multi()) { match.phase = 'over'; recordSolo(); }
+      else if (match.turn < match.players.length - 1) match.phase = 'turnover';
+      else {
+        match.phase = 'roundover';
+        var best = Math.min.apply(null, match.players.map(function (p) { return p.score; }));
+        var winners = match.players.filter(function (p) { return p.score === best; });
+        if (winners.length === 1) winners[0].wins++;
+      }
       render();
     }
 
-    function selectWay(way) {
-      if (game.phase !== 'pick') return;
-      game.selected = new Set(way);
+    function nextTurn() { match.turn++; startTurn(); }
+
+    /* ---------- What this device may do ---------- */
+
+    function isMine(idx) { return mode !== 'online' || idx === me; }
+    function busy() { return net && (net.pending || net.remote); }
+    function canPlay() { return match && isMine(activeIdx()) && !busy(); }
+
+    function doRoll(count) {
+      if (!canPlay() || match.phase !== 'roll' || !legalRollCount(count)) return;
+      if (mode === 'online') netRoll(count);
+      else applyRoll(randomDice(count));
+    }
+
+    function doToggle(t) {
+      if (!canPlay() || match.phase !== 'pick' || !board.open[t]) return;
+      if (board.selected.has(t)) board.selected.delete(t);
+      else if (selectedSum() + t <= rollTotal()) board.selected.add(t);
+      else return;
+      sendSelection();
       render();
     }
 
-    function shut() {
-      if (game.phase !== 'pick' || selectedSum() !== rollTotal()) return;
-      game.selected.forEach(function (t) { game.open[t] = false; });
-      game.selected.clear();
-      game.phase = 'roll';
-      if (remaining() === 0) { game.phase = 'over'; recordGame(); }
+    function doSelectWay(way) {
+      if (!canPlay() || match.phase !== 'pick') return;
+      board.selected = new Set(way);
+      sendSelection();
       render();
     }
 
-    function statsKey() { return 'stats' + game.n; }
-    function recordGame() {
+    function doShut() {
+      if (!canPlay()) return;
+      var tiles = Array.from(board.selected);
+      if (!legalShut(tiles)) return;
+      send({ t: 'shut', tiles: tiles });
+      applyShut(tiles);
+    }
+
+    function doAdvance() {
+      if (!match) return;
+      if (match.phase === 'over') startSolo();
+      else if (match.phase === 'turnover' && isMine(nextIdx())) { send({ t: 'start' }); nextTurn(); }
+      else if (match.phase === 'roundover') { send({ t: 'next', round: match.round + 1 }); startRound(match.round + 1); }
+      else if (match.phase === 'aborted') leaveOnline();
+    }
+
+    function randomDice(count) {
+      var buf = new Uint8Array(16), out = [];
+      while (out.length < count) {
+        crypto.getRandomValues(buf);
+        for (var i = 0; i < buf.length && out.length < count; i++) if (buf[i] < 252) out.push(1 + buf[i] % 6);
+      }
+      return out;
+    }
+
+    /* ---------- Solo ---------- */
+
+    function startSolo() { startMatch(['You'], settings.tiles, settings.oneDie); }
+
+    function statsKey() { return 'stats' + match.n; }
+    function recordSolo() {
       var s = load(statsKey(), { games: 0, shut: 0, best: null, total: 0 });
       var score = remaining();
       s.games++; s.total += score;
       if (score === 0) s.shut++;
       if (s.best === null || score < s.best) s.best = score;
       save(statsKey(), s);
+    }
+
+    /* ---------- Pass & play ---------- */
+
+    function renderLocalNames() {
+      var count = +$('localCount').value, wrap = $('localNames');
+      wrap.innerHTML = '';
+      for (var i = 0; i < count; i++) {
+        var row = document.createElement('div'), label = document.createElement('label'), input = document.createElement('input');
+        row.className = 'row';
+        input.type = 'text'; input.maxLength = 20; input.value = names[i]; input.dataset.i = i;
+        input.addEventListener('input', function () { names[+this.dataset.i] = this.value; save('names', names); });
+        label.append('Player ' + (i + 1) + ' ', input);
+        row.appendChild(label);
+        wrap.appendChild(row);
+      }
+    }
+
+    function startLocal() {
+      var count = +$('localCount').value, list = [];
+      for (var i = 0; i < count; i++) list.push(cleanName(names[i]) || 'Player ' + (i + 1));
+      startMatch(list, settings.tiles, settings.oneDie);
+    }
+
+    function cleanName(s) { return String(s || '').replace(/\s+/g, ' ').trim().slice(0, 20); }
+
+    /* ---------- Online: connection ---------- */
+    // PeerJS's free broker only introduces the two browsers; after that they talk directly.
+
+    function myOnlineName() { return cleanName($('onlineName').value) || 'Player'; }
+
+    function netStatus(text, bad, extra) {
+      var el = $('netStatus');
+      el.className = 'netstatus' + (bad ? ' bad' : '');
+      el.innerHTML = '';
+      if (text) el.append(text);
+      if (extra) el.appendChild(extra);
+    }
+
+    function newNet(host) {
+      teardownNet();
+      net = { peer: null, conn: null, host: host, code: '', pending: null, remote: null, queue: Promise.resolve(), other: '' };
+      return net;
+    }
+
+    function teardownNet() {
+      if (!net) return;
+      var old = net;
+      net = null;
+      try { if (old.conn && old.conn.open) old.conn.send({ t: 'bye' }); } catch (e) {}
+      setTimeout(function () { try { old.peer && old.peer.destroy(); } catch (e) {} }, 300);
+    }
+
+    function peerAvailable() {
+      if (window.Peer) return true;
+      netStatus("Couldn't load the online-play library. Check your internet connection and reload.", true);
+      return false;
+    }
+
+    function hostGame() {
+      if (!peerAvailable()) return;
+      save('onlineName', $('onlineName').value);
+      var n = newNet(true), code = '';
+      for (var i = 0; i < 5; i++) code += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)];
+      n.code = code;
+      netStatus('Setting up…');
+      n.peer = new Peer(PEER_PREFIX + code);
+      n.peer.on('open', function () {
+        if (net !== n) return;
+        var link = location.origin + location.pathname + '?join=' + code;
+        var box = document.createElement('div'), codeEl = document.createElement('code'), input = document.createElement('input'), copy = document.createElement('button');
+        box.className = 'share';
+        codeEl.textContent = code;
+        input.readOnly = true; input.value = link;
+        input.addEventListener('focus', function () { this.select(); });
+        copy.className = 'btn secondary'; copy.textContent = 'Copy link';
+        copy.addEventListener('click', function () {
+          navigator.clipboard.writeText(link).then(function () { copy.textContent = 'Copied!'; }, function () { input.select(); });
+        });
+        box.append(codeEl, input, copy);
+        netStatus('Send your friend this code or link, then wait here for them to join:', false, box);
+      });
+      n.peer.on('connection', function (c) {
+        if (net !== n) return;
+        if (n.conn) { c.on('open', function () { c.send({ t: 'full' }); setTimeout(function () { c.close(); }, 500); }); return; }
+        attach(c);
+      });
+      n.peer.on('error', function (e) {
+        if (net !== n) return;
+        if (e.type === 'unavailable-id') hostGame(); // code already taken; pick another
+        else netError(e);
+      });
+    }
+
+    function joinGame() {
+      if (!peerAvailable()) return;
+      var code = $('joinCode').value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (code.length !== 5) { netStatus('Game codes are 5 characters.', true); return; }
+      save('onlineName', $('onlineName').value);
+      var n = newNet(false);
+      n.code = code;
+      netStatus('Connecting…');
+      n.peer = new Peer();
+      n.peer.on('open', function () {
+        if (net !== n) return;
+        var c = n.peer.connect(PEER_PREFIX + code, { reliable: true });
+        attach(c);
+        c.on('open', function () { c.send({ t: 'hello', v: PROTOCOL, name: myOnlineName() }); });
+      });
+      n.peer.on('error', function (e) {
+        if (net !== n) return;
+        if (e.type === 'peer-unavailable') { netStatus('No game found with code ' + code + '. Check the code, and make sure your friend still has the game open.', true); teardownNet(); }
+        else netError(e);
+      });
+    }
+
+    function netError(e) {
+      var text = e.type === 'network' || e.type === 'server-error' || e.type === 'socket-error'
+        ? "Couldn't reach the connection service. Check your internet, or try a different network (some school networks block this)."
+        : 'Connection problem (' + (e.type || e.message || 'unknown') + '). Try again.';
+      if (match && mode === 'online' && match.phase !== 'aborted') abort(text);
+      else netStatus(text, true);
+    }
+
+    function attach(c) {
+      var n = net;
+      n.conn = c;
+      c.on('data', function (msg) {
+        if (net !== n) return;
+        n.queue = n.queue.then(function () { return handle(msg); }).catch(function (err) { console.error(err); });
+      });
+      c.on('close', function () { if (net === n) onDisconnect(); });
+      c.on('error', function (e) { if (net === n) netError(e); });
+    }
+
+    function send(msg) {
+      if (mode !== 'online' || !net || !net.conn || !net.conn.open) return;
+      net.conn.send(msg);
+    }
+
+    function sendSelection() { send({ t: 'sel', tiles: Array.from(board.selected) }); }
+
+    function onDisconnect() {
+      if (!match || match.phase === 'aborted') return;
+      var who = net.other || 'Your friend';
+      var midRound = match.phase !== 'roundover';
+      abort(who + ' left the game' + (midRound ? ' in the middle of a round, so it counts as a forfeit. You win!' : '.'), !midRound);
+    }
+
+    function abort(text, calm) {
+      match.phase = 'aborted';
+      match.alert = text;
+      match.alertCalm = !!calm;
+      if (net) { net.pending = null; net.remote = null; }
+      teardownNet();
+      render();
+    }
+
+    function cheat(reason) {
+      send({ t: 'flag', reason: reason });
+      abort('⚠ ' + (net && net.other || 'Your friend') + "'s game broke the rules (" + reason + '). Match stopped.');
+    }
+
+    function leaveOnline() {
+      teardownNet();
+      match = null;
+      netStatus('');
+      render();
+    }
+
+    /* ---------- Online: fair dice ----------
+       Neither player can choose the dice. For each roll:
+       1. The roller picks a secret random number and sends only its SHA-256 fingerprint (a sealed envelope).
+       2. The other player sends back their own random number, in the open.
+       3. The roller opens the envelope by revealing their number; the other game checks it matches the fingerprint.
+       The dice come from hashing both numbers together. The roller is locked in before seeing the
+       other number, and the other player never sees the roller's number in time to steer it. */
+
+    function randomHex() {
+      var b = new Uint8Array(32);
+      crypto.getRandomValues(b);
+      return Array.from(b, function (x) { return x.toString(16).padStart(2, '0'); }).join('');
+    }
+
+    function sha256(text) {
+      return crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)).then(function (buf) { return new Uint8Array(buf); });
+    }
+    function toHex(bytes) { return Array.from(bytes, function (x) { return x.toString(16).padStart(2, '0'); }).join(''); }
+    function commitFor(k, secret) { return sha256('commit:' + k + ':' + secret).then(toHex); }
+
+    async function diceFrom(rollerSecret, otherSecret, k, count) {
+      var out = [], bytes = await sha256('dice:' + k + ':' + rollerSecret + ':' + otherSecret);
+      while (out.length < count) {
+        for (var i = 0; i < bytes.length && out.length < count; i++) if (bytes[i] < 252) out.push(1 + bytes[i] % 6);
+        if (out.length < count) bytes = await sha256(toHex(bytes));
+      }
+      return out;
+    }
+
+    async function netRoll(count) {
+      var k = match.rolls, secret = randomHex();
+      net.pending = { k: k, count: count, secret: secret };
+      render();
+      send({ t: 'roll', k: k, count: count, c: await commitFor(k, secret) });
+    }
+
+    var HEX64 = /^[0-9a-f]{64}$/;
+
+    async function handle(msg) {
+      if (!net || !msg || typeof msg !== 'object') return;
+      var them = 1 - me;
+
+      if (msg.t === 'hello' && net.host && !match) {
+        if (msg.v !== PROTOCOL) { net.conn.send({ t: 'old' }); return; }
+        net.other = cleanName(msg.name) || 'Friend';
+        me = 0;
+        net.conn.send({ t: 'welcome', v: PROTOCOL, name: myOnlineName(), n: settings.tiles, oneDie: settings.oneDie });
+        startMatch([myOnlineName(), net.other], settings.tiles, settings.oneDie);
+        return;
+      }
+      if (msg.t === 'welcome' && !net.host && !match) {
+        if (msg.v !== PROTOCOL) { netStatus('Your friend has a different version of the game. Both of you should reload the page.', true); teardownNet(); return; }
+        if ([9, 10, 12].indexOf(msg.n) < 0) { netStatus('Bad game settings from host.', true); teardownNet(); return; }
+        net.other = cleanName(msg.name) || 'Friend';
+        me = 1;
+        startMatch([net.other, myOnlineName()], msg.n, !!msg.oneDie);
+        return;
+      }
+      if (msg.t === 'old') { netStatus('Your friend has a different version of the game. Both of you should reload the page.', true); teardownNet(); return; }
+      if (msg.t === 'full') { netStatus('That game already has two players.', true); teardownNet(); return; }
+      if (msg.t === 'bye') { onDisconnect(); return; }
+      if (msg.t === 'flag' && match) { abort("⚠ " + (net.other || 'Your friend') + "'s game stopped the match because yours sent a move that broke the rules. Reload the page and start a new game."); return; }
+      if (!match || match.phase === 'aborted') return;
+
+      var theirTurn = activeIdx() === them;
+      switch (msg.t) {
+        case 'sel': // live preview of their selection; not trusted for anything
+          if (!theirTurn || match.phase !== 'pick' || !Array.isArray(msg.tiles)) return;
+          board.selected = new Set(msg.tiles.filter(function (t) { return Number.isInteger(t) && board.open[t]; }));
+          render();
+          return;
+
+        case 'roll': // they sealed their number; reply with ours in the open
+          if (!theirTurn || match.phase !== 'roll' || net.remote) return cheat('rolled out of turn');
+          if (msg.k !== match.rolls) return cheat('roll out of sequence');
+          if (!legalRollCount(msg.count)) return cheat('rolled one die when that is not allowed');
+          if (typeof msg.c !== 'string' || !HEX64.test(msg.c)) return cheat('bad dice message');
+          net.remote = { k: msg.k, count: msg.count, c: msg.c, secret: randomHex() };
+          send({ t: 'seed', k: msg.k, r: net.remote.secret });
+          render();
+          return;
+
+        case 'seed': // they answered our sealed number; open the envelope
+          if (!net.pending || msg.k !== net.pending.k || typeof msg.r !== 'string' || !HEX64.test(msg.r)) return cheat('bad dice message');
+          var p = net.pending;
+          send({ t: 'reveal', k: p.k, r: p.secret });
+          var mine = await diceFrom(p.secret, msg.r, p.k, p.count);
+          net.pending = null;
+          applyRoll(mine);
+          return;
+
+        case 'reveal': // check their number matches what they sealed
+          var rm = net.remote;
+          if (!rm || msg.k !== rm.k || typeof msg.r !== 'string' || !HEX64.test(msg.r)) return cheat('bad dice message');
+          if ((await commitFor(rm.k, msg.r)) !== rm.c) return cheat("their dice didn't match the sealed number");
+          var theirs = await diceFrom(msg.r, rm.secret, rm.k, rm.count);
+          net.remote = null;
+          applyRoll(theirs);
+          return;
+
+        case 'shut':
+          if (!theirTurn || !legalShut(msg.tiles)) return cheat('tried to shut tiles that do not add up to the roll');
+          applyShut(msg.tiles);
+          return;
+
+        case 'start':
+          if (match.phase !== 'turnover' || nextIdx() !== them) return;
+          nextTurn();
+          return;
+
+        case 'next':
+          if (match.phase !== 'roundover' || msg.round !== match.round + 1) return; // both clicked; ignore the duplicate
+          startRound(match.round + 1);
+          return;
+      }
+    }
+
+    /* ---------- Rendering ---------- */
+
+    function buildTiles() {
+      var el = $('tiles');
+      el.style.setProperty('--n', match.n);
+      el.innerHTML = '';
+      for (var t = 1; t <= match.n; t++) {
+        var b = document.createElement('button');
+        b.className = 'tile';
+        b.textContent = t;
+        b.dataset.t = t;
+        b.addEventListener('click', function () { doToggle(+this.dataset.t); });
+        el.appendChild(b);
+      }
     }
 
     function renderDie(value, animate) {
@@ -294,111 +767,228 @@
       return d;
     }
 
+    function nameOf(idx) {
+      var p = match.players[idx];
+      return mode === 'online' && idx === me ? 'You' : p.name;
+    }
+
     function render(animate) {
-      var total = rollTotal(), ways = game.phase === 'pick' ? waysToMake(total) : [];
+      document.querySelectorAll('.modes button').forEach(function (b) { b.setAttribute('aria-pressed', b.dataset.mode === mode); });
+
+      var inSetup = !match;
+      $('setupLocal').hidden = !(mode === 'local' && inSetup);
+      $('setupOnline').hidden = !(mode === 'online' && inSetup);
+      $('play').hidden = inSetup;
+      $('statsPanel').hidden = mode !== 'solo';
+      var locked = multi() && !!match;
+      $('setTiles').disabled = $('setOneDie').disabled = locked;
+      $('settingsNote').hidden = !locked;
+      $('setTiles').value = locked ? match.n : settings.tiles;
+      $('setOneDie').checked = locked ? match.oneDie : settings.oneDie;
+      if (inSetup) return;
+
+      renderScoreboard();
+
+      var phase = match.phase, active = activeIdx(), mine = isMine(active);
+      var total = rollTotal(), ways = phase === 'pick' ? waysToMake(total) : [];
       var hintTiles = new Set();
       if (settings.ways) ways.forEach(function (w) { w.forEach(function (t) { hintTiles.add(t); }); });
 
       document.querySelectorAll('.tile').forEach(function (b) {
         var t = +b.dataset.t;
-        b.classList.toggle('shut', !game.open[t]);
-        b.classList.toggle('selected', game.selected.has(t));
+        b.classList.toggle('shut', !board.open[t]);
+        b.classList.toggle('selected', board.selected.has(t));
         b.classList.toggle('hint', hintTiles.has(t));
-        b.disabled = !game.open[t] || game.phase !== 'pick';
-        b.setAttribute('aria-label', 'Tile ' + t + (game.open[t] ? '' : ', shut') + (game.selected.has(t) ? ', selected' : ''));
+        b.disabled = !board.open[t] || phase !== 'pick' || !canPlay();
+        b.setAttribute('aria-label', 'Tile ' + t + (board.open[t] ? '' : ', shut') + (board.selected.has(t) ? ', selected' : ''));
       });
 
       var felt = $('felt');
       felt.innerHTML = '';
-      if (game.dice.length && game.phase !== 'roll') {
-        game.dice.forEach(function (v) { felt.appendChild(renderDie(v, animate)); });
+      if (board.dice.length && phase !== 'roll') {
+        board.dice.forEach(function (v) { felt.appendChild(renderDie(v, animate)); });
       } else {
         var m = document.createElement('div');
         m.className = 'felt-msg';
-        m.textContent = game.phase === 'over' ? '' : 'Roll the dice';
+        m.textContent = busy() ? 'Rolling…' : !multi() ? 'Roll the dice' : mine && mode === 'online' ? 'Your turn' : match.players[active].name + "'s turn";
         felt.appendChild(m);
       }
 
-      var msg = $('msg'), sum = $('sum');
+      var msg = $('msg'), sumEl = $('sum'), who = nameOf(active);
       msg.className = 'msg';
-      sum.textContent = '';
-      if (game.phase === 'roll') {
-        msg.textContent = remaining() === game.n * (game.n + 1) / 2 ? 'Roll to start.' : 'Nice. Roll again.';
-        sum.textContent = 'Open tiles total ' + remaining();
-      } else if (game.phase === 'pick') {
-        msg.textContent = 'You rolled ' + total + '. Pick tiles that add to ' + total + '.';
-        sum.textContent = 'Selected: ' + selectedSum() + ' / ' + total;
-      } else if (remaining() === 0) {
-        msg.textContent = 'You shut the box! Score: 0';
-        msg.classList.add('win');
-        felt.querySelector('.felt-msg') && (felt.querySelector('.felt-msg').textContent = '🎉 Box shut!');
-      } else {
-        msg.textContent = 'No way to make ' + total + '. Game over. Score: ' + remaining();
-        msg.classList.add('lose');
+      sumEl.textContent = '';
+      var advance = '';
+      if (phase === 'roll') {
+        if (busy()) msg.textContent = 'Rolling the dice together…';
+        else if (!mine) msg.textContent = 'Waiting for ' + who + ' to roll…';
+        else if (!multi()) msg.textContent = remaining() === match.n * (match.n + 1) / 2 ? 'Roll to start.' : 'Nice. Roll again.';
+        else msg.textContent = (mode === 'online' ? 'Your' : who + "'s") + ' turn. Roll the dice.';
+        sumEl.textContent = 'Open tiles total ' + remaining();
+      } else if (phase === 'pick') {
+        msg.textContent = who + ' rolled ' + total + '.' + (mine ? ' Pick tiles that add to ' + total + '.' : ' Waiting for them to pick tiles…');
+        sumEl.textContent = 'Selected: ' + selectedSum() + ' / ' + total;
+      } else if (phase === 'over') {
+        if (remaining() === 0) { msg.textContent = 'You shut the box! Score: 0'; msg.classList.add('win'); }
+        else { msg.textContent = 'No way to make ' + total + '. Game over. Score: ' + remaining(); msg.classList.add('lose'); }
+        advance = 'Play again';
+      } else if (phase === 'turnover') {
+        var score = match.players[active].score, nxt = nextIdx();
+        msg.textContent = (score === 0 ? who + ' shut the box!' : who + ' scored ' + score + '.') + ' ';
+        if (mode === 'local') { msg.textContent += 'Pass to ' + match.players[nxt].name + '.'; advance = 'Start ' + match.players[nxt].name + "'s turn"; }
+        else if (isMine(nxt)) { msg.textContent += 'Your turn next.'; advance = 'Start my turn'; }
+        else msg.textContent += 'Waiting for ' + match.players[nxt].name + ' to start.';
+      } else if (phase === 'roundover') {
+        var best = Math.min.apply(null, match.players.map(function (p) { return p.score; }));
+        var winners = [];
+        match.players.forEach(function (p, i) { if (p.score === best) winners.push(i); });
+        if (winners.length > 1) msg.textContent = 'Round ' + match.round + ' is a tie at ' + best + '.';
+        else {
+          var w = winners[0];
+          msg.textContent = (mode === 'online' && w === me ? 'You win' : match.players[w].name + ' wins') + ' round ' + match.round + ' with ' + best + '!';
+          msg.classList.add(mode === 'online' && w !== me ? 'lose' : 'win');
+        }
+        advance = 'Next round';
+      } else if (phase === 'aborted') {
+        msg.textContent = match.alert;
+        msg.classList.add(match.alertCalm ? 'win' : 'lose');
+        advance = 'Back to setup';
       }
 
-      $('roll').disabled = game.phase !== 'roll';
-      $('roll').hidden = game.phase === 'over';
-      $('roll1').hidden = !canUseOneDie() || game.phase === 'over';
-      $('roll1').disabled = game.phase !== 'roll';
-      $('shut').disabled = game.phase !== 'pick' || selectedSum() !== total;
-      $('shut').hidden = game.phase === 'over';
-      $('newgame').className = 'btn' + (game.phase === 'over' ? '' : ' secondary');
+      var playing = phase === 'roll' || phase === 'pick';
+      $('roll').hidden = !playing;
+      $('roll').disabled = !canPlay() || phase !== 'roll';
+      $('roll1').hidden = !playing || !legalRollCount(1);
+      $('roll1').disabled = !canPlay() || phase !== 'roll';
+      $('shut').hidden = !playing;
+      $('shut').disabled = !canPlay() || phase !== 'pick' || selectedSum() !== total;
+      $('advance').hidden = !advance;
+      $('advance').textContent = advance;
+      $('newgame').hidden = mode !== 'solo' || phase === 'over';
+      $('leave').hidden = !multi() || phase === 'aborted';
+      $('leave').textContent = mode === 'online' ? 'Leave game' : 'End game';
 
       var waysEl = $('ways');
-      waysEl.hidden = !(settings.ways && game.phase === 'pick');
+      waysEl.hidden = !(settings.ways && phase === 'pick');
       if (!waysEl.hidden) {
         waysEl.innerHTML = '';
         waysEl.append(ways.length + ' way' + (ways.length === 1 ? '' : 's') + ' to make ' + total + ': ');
         ways.forEach(function (w) {
           var b = document.createElement('button');
           b.textContent = w.join(' + ');
-          b.addEventListener('click', function () { selectWay(w); });
+          b.disabled = !canPlay();
+          b.addEventListener('click', function () { doSelectWay(w); });
           waysEl.appendChild(b);
         });
       }
 
-      renderStats();
+      if (mode === 'solo') renderStats();
+    }
+
+    function renderScoreboard() {
+      var table = $('scoreboard');
+      table.hidden = !multi();
+      if (table.hidden) return;
+      $('roundLabel').textContent = 'Round ' + match.round;
+      var rows = $('scoreRows'), active = activeIdx(), playing = ['roll', 'pick'].indexOf(match.phase) >= 0;
+      var topWins = Math.max.apply(null, match.players.map(function (p) { return p.wins; }));
+      rows.innerHTML = '';
+      match.players.forEach(function (p, i) {
+        var tr = document.createElement('tr');
+        if (playing && i === active) tr.className = 'active';
+        if (topWins > 0 && p.wins === topWins) tr.classList.add('leader');
+        var name = document.createElement('td'), score = document.createElement('td'), wins = document.createElement('td');
+        name.textContent = p.name + (mode === 'online' && i === me ? ' (you)' : '');
+        score.className = wins.className = 'num';
+        score.textContent = p.score !== null ? p.score : playing && i === active ? 'playing' : '–';
+        wins.textContent = p.wins;
+        tr.append(name, score, wins);
+        rows.appendChild(tr);
+      });
     }
 
     function renderStats() {
       var s = load(statsKey(), { games: 0, shut: 0, best: null, total: 0 });
-      $('statsLabel').textContent = '(1–' + game.n + ')';
+      $('statsLabel').textContent = '(1–' + match.n + ')';
       $('stGames').textContent = s.games;
       $('stShut').textContent = s.shut;
       $('stBest').textContent = s.best === null ? '–' : s.best;
       $('stAvg').textContent = s.games ? (s.total / s.games).toFixed(1) : '–';
     }
 
-    $('roll').addEventListener('click', function () { roll(2); });
-    $('roll1').addEventListener('click', function () { roll(1); });
-    $('shut').addEventListener('click', shut);
-    $('newgame').addEventListener('click', newGame);
+    /* ---------- Wiring ---------- */
 
-    $('setTiles').value = settings.tiles;
-    $('setOneDie').checked = settings.oneDie;
-    $('setWays').checked = settings.ways;
-    $('setTiles').addEventListener('change', function () {
-      settings.tiles = +this.value; save('settings', settings); newGame();
+    function switchMode(m) {
+      if (m === mode) return;
+      if (match && multi() && ['roll', 'pick', 'turnover'].indexOf(match.phase) >= 0 && !confirm('Leave the current game?')) return;
+      teardownNet();
+      netStatus('');
+      mode = m;
+      match = null;
+      if (mode === 'solo') startSolo();
+      else if (mode === 'local') renderLocalNames();
+      render();
+    }
+
+    document.querySelectorAll('.modes button').forEach(function (b) {
+      b.addEventListener('click', function () { switchMode(b.dataset.mode); });
     });
-    $('setOneDie').addEventListener('change', function () { settings.oneDie = this.checked; save('settings', settings); render(); });
+
+    $('roll').addEventListener('click', function () { doRoll(2); });
+    $('roll1').addEventListener('click', function () { doRoll(1); });
+    $('shut').addEventListener('click', doShut);
+    $('advance').addEventListener('click', doAdvance);
+    $('newgame').addEventListener('click', startSolo);
+    $('leave').addEventListener('click', function () {
+      if (!confirm(mode === 'online' ? 'Leave this game?' : 'End this game?')) return;
+      if (mode === 'online') leaveOnline();
+      else { match = null; render(); }
+    });
+
+    $('localCount').addEventListener('change', renderLocalNames);
+    $('localStart').addEventListener('click', startLocal);
+    $('onlineName').value = load('onlineName', '');
+    $('hostBtn').addEventListener('click', hostGame);
+    $('joinBtn').addEventListener('click', joinGame);
+    $('joinCode').addEventListener('keydown', function (e) { if (e.key === 'Enter') joinGame(); });
+
+    $('setTiles').addEventListener('change', function () {
+      settings.tiles = +this.value; save('settings', settings);
+      if (mode === 'solo') startSolo();
+    });
+    $('setOneDie').addEventListener('change', function () {
+      settings.oneDie = this.checked; save('settings', settings);
+      if (mode === 'solo') { match.oneDie = this.checked; render(); }
+    });
     $('setWays').addEventListener('change', function () { settings.ways = this.checked; save('settings', settings); render(); });
+    $('setWays').checked = settings.ways;
 
     document.addEventListener('keydown', function (e) {
-      if (e.metaKey || e.ctrlKey || e.altKey || /SELECT|INPUT/.test(e.target.tagName)) return;
+      if (e.metaKey || e.ctrlKey || e.altKey || /SELECT|INPUT|TEXTAREA/.test(e.target.tagName) || !match) return;
       var keyTile = { '0': 10, '-': 11, '=': 12 }[e.key] || (/^[1-9]$/.test(e.key) ? +e.key : 0);
-      if (keyTile) { toggle(keyTile); return; }
+      if (keyTile) { doToggle(keyTile); return; }
       if (e.key === ' ' || e.key === 'Enter') {
         if (e.target.tagName === 'BUTTON' && !e.target.classList.contains('tile')) return; // let buttons click normally
         e.preventDefault();
-        if (game.phase === 'roll') roll(2);
-        else if (game.phase === 'pick') shut();
-        else newGame();
+        if (match.phase === 'roll') doRoll(2);
+        else if (match.phase === 'pick') doShut();
+        else doAdvance();
       }
-      if (e.key === 'n' || e.key === 'N') newGame();
+      if ((e.key === 'n' || e.key === 'N') && mode === 'solo') startSolo();
     });
 
-    newGame();
+    window.addEventListener('beforeunload', teardownNet);
+
+    // A shared link (?join=CODE) opens straight to the join screen.
+    var joinParam = new URLSearchParams(location.search).get('join');
+    if (joinParam) {
+      mode = 'online';
+      $('joinCode').value = joinParam.toUpperCase().slice(0, 5);
+      netStatus('Enter your name, then click Join.');
+      render();
+      $('onlineName').focus();
+    } else {
+      startSolo();
+    }
   </script>
 </body>
 </html>
