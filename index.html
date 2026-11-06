@@ -196,7 +196,7 @@
     <div id="play">
       <table class="scoreboard" id="scoreboard" hidden>
         <caption id="roundLabel"></caption>
-        <thead><tr><th>Player</th><th class="num">This round</th><th class="num">Wins</th></tr></thead>
+        <thead><tr><th>Player</th><th class="num">This round</th><th class="num">Won</th><th class="num">Lost</th><th class="num">Tied</th></tr></thead>
         <tbody id="scoreRows"></tbody>
       </table>
 
@@ -277,7 +277,7 @@
     var settings = load('settings', { tiles: 9, oneDie: true, ways: false });
     var names = load('names', ['Player 1', 'Player 2', 'Player 3', 'Player 4']);
     var mode = 'solo';
-    // match: { players: [{name, wins, score}], round, turn, n, oneDie, rolls, phase, alert }
+    // match: { players: [{name, wins, losses, ties, score}], round, turn, n, oneDie, rolls, phase, alert }
     // phase: roll | pick | turnover | roundover | over (solo) | aborted (online)
     var match = null;
     var board = null; // { open: {tile: bool}, selected: Set, dice: [] }
@@ -329,7 +329,7 @@
 
     function startMatch(playerNames, n, oneDie) {
       match = {
-        players: playerNames.map(function (name) { return { name: name, wins: 0, score: null }; }),
+        players: playerNames.map(function (name) { return { name: name, wins: 0, losses: 0, ties: 0, score: null }; }),
         round: 0, turn: 0, n: n, oneDie: oneDie, rolls: 0, phase: 'roll', alert: ''
       };
       buildTiles();
@@ -380,7 +380,11 @@
         match.phase = 'roundover';
         var best = Math.min.apply(null, match.players.map(function (p) { return p.score; }));
         var winners = match.players.filter(function (p) { return p.score === best; });
-        if (winners.length === 1) winners[0].wins++;
+        match.players.forEach(function (p) {
+          if (p.score !== best) p.losses++;
+          else if (winners.length === 1) p.wins++;
+          else p.ties++;
+        });
       }
       render();
     }
@@ -568,7 +572,17 @@
       });
     }
 
+    // Errors about the broker (the matchmaking server), not the direct link between the two browsers.
+    var BROKER_ERRORS = ['network', 'server-error', 'socket-error', 'socket-closed', 'disconnected'];
+
     function netError(e) {
+      // Once the two browsers are linked, the broker isn't needed. Its free server drops idle
+      // connections (and phones drop it when the screen locks), so ignore that; if the direct
+      // link itself goes down, the connection's 'close' handler deals with it.
+      if (net && net.conn && net.conn.open && BROKER_ERRORS.indexOf(e.type) >= 0) {
+        console.warn('Ignoring broker error while connected:', e.type, e.message);
+        return;
+      }
       var text = e.type === 'network' || e.type === 'server-error' || e.type === 'socket-error'
         ? "Couldn't reach the connection service. Check your internet, or try a different network (some school networks block this)."
         : 'Connection problem (' + (e.type || e.message || 'unknown') + '). Try again.';
@@ -896,12 +910,15 @@
         var tr = document.createElement('tr');
         if (playing && i === active) tr.className = 'active';
         if (topWins > 0 && p.wins === topWins) tr.classList.add('leader');
-        var name = document.createElement('td'), score = document.createElement('td'), wins = document.createElement('td');
+        var name = document.createElement('td'), score = document.createElement('td');
+        var wins = document.createElement('td'), losses = document.createElement('td'), ties = document.createElement('td');
         name.textContent = p.name + (mode === 'online' && i === me ? ' (you)' : '');
-        score.className = wins.className = 'num';
+        score.className = wins.className = losses.className = ties.className = 'num';
         score.textContent = p.score !== null ? p.score : playing && i === active ? 'playing' : '–';
         wins.textContent = p.wins;
-        tr.append(name, score, wins);
+        losses.textContent = p.losses;
+        ties.textContent = p.ties;
+        tr.append(name, score, wins, losses, ties);
         rows.appendChild(tr);
       });
     }
