@@ -262,7 +262,7 @@
 
   <script>
     var PIPS = { 1: [4], 2: [0, 8], 3: [0, 4, 8], 4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8] };
-    var PROTOCOL = 1;
+    var PROTOCOL = 2;
     var PEER_PREFIX = 'chrisgodek-shutthebox-';
     var CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
     var $ = function (id) { return document.getElementById(id); };
@@ -330,20 +330,21 @@
     function startMatch(playerNames, n, oneDie) {
       match = {
         players: playerNames.map(function (name) { return { name: name, wins: 0, losses: 0, ties: 0, score: null }; }),
-        round: 0, turn: 0, n: n, oneDie: oneDie, rolls: 0, phase: 'roll', alert: ''
+        round: 0, turn: 0, starter: 0, nextStarter: 0, n: n, oneDie: oneDie, rolls: 0, phase: 'roll', alert: ''
       };
       buildTiles();
       startRound(1);
     }
 
-    // Starting player rotates each round.
-    function playerAt(turn) { return (match.round - 1 + turn) % match.players.length; }
+    // The winner of a round starts the next one; after a tie, the starter rotates.
+    function playerAt(turn) { return (match.starter + turn) % match.players.length; }
     function activeIdx() { return playerAt(match.turn); }
     function nextIdx() { return playerAt(match.turn + 1); }
     function multi() { return mode !== 'solo'; }
 
     function startRound(r) {
       match.round = r;
+      match.starter = r === 1 ? 0 : match.nextStarter;
       match.turn = 0;
       match.players.forEach(function (p) { p.score = null; });
       startTurn();
@@ -375,27 +376,33 @@
     function endTurn() {
       match.players[activeIdx()].score = remaining();
       if (!multi()) { match.phase = 'over'; recordSolo(); }
-      else if (match.turn < match.players.length - 1) match.phase = 'turnover';
-      else {
+      else if (remaining() > 0 && match.turn < match.players.length - 1) match.phase = 'turnover';
+      else { // everyone has played, or someone shut the box, which wins the round on the spot
         match.phase = 'roundover';
-        var best = Math.min.apply(null, match.players.map(function (p) { return p.score; }));
+        var best = bestScore();
         var winners = match.players.filter(function (p) { return p.score === best; });
         match.players.forEach(function (p) {
           if (p.score !== best) p.losses++;
           else if (winners.length === 1) p.wins++;
           else p.ties++;
         });
+        match.nextStarter = winners.length === 1 ? match.players.indexOf(winners[0]) : (match.starter + 1) % match.players.length;
       }
       render();
     }
 
     function nextTurn() { match.turn++; startTurn(); }
 
+    // Lowest score this round, ignoring players who never got a turn because someone shut the box.
+    function bestScore() {
+      return Math.min.apply(null, match.players.filter(function (p) { return p.score !== null; }).map(function (p) { return p.score; }));
+    }
+
     /* ---------- What this device may do ---------- */
 
     function isMine(idx) { return mode !== 'online' || idx === me; }
     function busy() { return net && (net.pending || net.remote); }
-    function canPlay() { return match && isMine(activeIdx()) && !busy(); }
+    function canPlay() { return match && isMine(activeIdx()) && !busy() && !(net && net.lost); }
 
     function doRoll(count) {
       if (!canPlay() || match.phase !== 'roll' || !legalRollCount(count)) return;
@@ -429,6 +436,7 @@
 
     function doAdvance() {
       if (!match) return;
+      if (net && net.lost && match.phase !== 'aborted') return;
       if (match.phase === 'over') startSolo();
       else if (match.phase === 'turnover' && isMine(nextIdx())) { send({ t: 'start' }); nextTurn(); }
       else if (match.phase === 'roundover') { send({ t: 'next', round: match.round + 1 }); startRound(match.round + 1); }
@@ -497,7 +505,10 @@
 
     function newNet(host) {
       teardownNet();
-      net = { peer: null, conn: null, host: host, code: '', pending: null, remote: null, queue: Promise.resolve(), other: '' };
+      // out: every game message we've sent (numbered), so we can resend what got lost in a dropout.
+      // recv: how many of their numbered messages we've handled. lost: the link dropped and we're reconnecting.
+      net = { peer: null, conn: null, host: host, code: '', pending: null, remote: null, queue: Promise.resolve(), other: '',
+              token: '', out: [], recv: 0, lost: false, retry: null, giveUp: null };
       return net;
     }
 
@@ -505,6 +516,8 @@
       if (!net) return;
       var old = net;
       net = null;
+      clearTimeout(old.retry);
+      clearTimeout(old.giveUp);
       try { if (old.conn && old.conn.open) old.conn.send({ t: 'bye' }); } catch (e) {}
       setTimeout(function () { try { old.peer && old.peer.destroy(); } catch (e) {} }, 300);
     }
@@ -523,8 +536,9 @@
       n.code = code;
       netStatus('Setting up…');
       n.peer = new Peer(PEER_PREFIX + code);
+      stayOnBroker(n);
       n.peer.on('open', function () {
-        if (net !== n) return;
+        if (net !== n || match) return; // also fires after the broker reconnects mid-match
         var link = location.origin + location.pathname + '?join=' + code;
         var box = document.createElement('div'), codeEl = document.createElement('code'), input = document.createElement('input'), copy = document.createElement('button');
         box.className = 'share';
@@ -540,12 +554,23 @@
       });
       n.peer.on('connection', function (c) {
         if (net !== n) return;
-        if (n.conn) { c.on('open', function () { c.send({ t: 'full' }); setTimeout(function () { c.close(); }, 500); }); return; }
-        attach(c);
+        if (!n.conn && !match) { attach(c); return; }
+        // Someone else is calling. If it's our friend coming back after a dropout, pick up where we left off.
+        c.on('data', function (msg) {
+          if (net !== n || c === n.conn) return;
+          if (match && msg && msg.t === 'resume' && n.token && msg.token === n.token) {
+            attach(c);
+            c.send({ t: 'resumed', got: n.recv });
+            resumed(msg.got);
+          } else {
+            c.send({ t: 'full' });
+            setTimeout(function () { c.close(); }, 500);
+          }
+        });
       });
       n.peer.on('error', function (e) {
         if (net !== n) return;
-        if (e.type === 'unavailable-id') hostGame(); // code already taken; pick another
+        if (e.type === 'unavailable-id' && !match) hostGame(); // code already taken; pick another
         else netError(e);
       });
     }
@@ -559,15 +584,16 @@
       n.code = code;
       netStatus('Connecting…');
       n.peer = new Peer();
+      stayOnBroker(n);
       n.peer.on('open', function () {
-        if (net !== n) return;
+        if (net !== n || n.conn || match) return; // also fires after the broker reconnects mid-match
         var c = n.peer.connect(PEER_PREFIX + code, { reliable: true });
         attach(c);
         c.on('open', function () { c.send({ t: 'hello', v: PROTOCOL, name: myOnlineName() }); });
       });
       n.peer.on('error', function (e) {
         if (net !== n) return;
-        if (e.type === 'peer-unavailable') { netStatus('No game found with code ' + code + '. Check the code, and make sure your friend still has the game open.', true); teardownNet(); }
+        if (e.type === 'peer-unavailable' && !match) { netStatus('No game found with code ' + code + '. Check the code, and make sure your friend still has the game open.', true); teardownNet(); }
         else netError(e);
       });
     }
@@ -576,6 +602,12 @@
     var BROKER_ERRORS = ['network', 'server-error', 'socket-error', 'socket-closed', 'disconnected'];
 
     function netError(e) {
+      // During a match, any trouble just means "reconnect"; if that never works, giveUp ends the match.
+      if (net && match && mode === 'online' && match.phase !== 'aborted') {
+        console.warn('Connection trouble during the match:', e.type, e.message);
+        if (!net.lost && !(net.conn && net.conn.open)) linkDown();
+        return;
+      }
       // Once the two browsers are linked, the broker isn't needed. Its free server drops idle
       // connections (and phones drop it when the screen locks), so ignore that; if the direct
       // link itself goes down, the connection's 'close' handler deals with it.
@@ -591,28 +623,104 @@
     }
 
     function attach(c) {
-      var n = net;
+      var n = net, old = n.conn;
       n.conn = c;
+      if (old && old !== c) try { old.close(); } catch (e) {}
       c.on('data', function (msg) {
-        if (net !== n) return;
+        if (net !== n || c !== n.conn) return;
+        if (msg && typeof msg.s === 'number') { // numbered game message: skip ones we've already handled
+          if (msg.s !== n.recv) return;
+          n.recv++;
+        }
         n.queue = n.queue.then(function () { return handle(msg); }).catch(function (err) { console.error(err); });
       });
-      c.on('close', function () { if (net === n) onDisconnect(); });
-      c.on('error', function (e) { if (net === n) netError(e); });
+      c.on('close', function () { if (net === n && c === n.conn) linkDown(); });
+      c.on('error', function (e) { if (net === n && c === n.conn) linkDown(e); });
+      // The browser only reports a dead link after ~30 seconds. If it's been flaky for a few seconds, reconnect sooner.
+      var pc = c.peerConnection;
+      if (pc) pc.addEventListener('iceconnectionstatechange', function () {
+        if (pc.iceConnectionState !== 'disconnected') return;
+        setTimeout(function () {
+          if (net === n && c === n.conn && pc.iceConnectionState === 'disconnected') linkDown();
+        }, 4000);
+      });
     }
 
     function send(msg) {
-      if (mode !== 'online' || !net || !net.conn || !net.conn.open) return;
-      net.conn.send(msg);
+      if (mode !== 'online' || !net) return;
+      msg.s = net.out.length;
+      net.out.push(msg);
+      if (net.conn && net.conn.open && !net.lost) net.conn.send(msg);
     }
+
+    /* ---------- Online: dropouts ----------
+       Phones cut the link when you switch apps or tabs. Instead of ending the match, both sides wait:
+       the joiner keeps calling the host, the host accepts the call if it carries the secret token from
+       the start of the match, and each side resends any moves the other missed. */
+
+    var RECONNECT_MS = 4000, GIVE_UP_MS = 3 * 60 * 1000;
+
+    function linkDown(e) {
+      var n = net;
+      if (!match || match.phase === 'aborted') { if (e) netError(e); else onDisconnect(); return; }
+      var old = n.conn;
+      n.conn = null;
+      if (old) try { old.close(); } catch (x) {}
+      if (n.lost) return;
+      n.lost = true;
+      n.giveUp = setTimeout(function () {
+        if (net === n && n.lost) onDisconnect(' lost the connection and didn’t come back');
+      }, GIVE_UP_MS);
+      render();
+      reconnect(n);
+    }
+
+    function reconnect(n) {
+      if (net !== n || !n.lost) return;
+      clearTimeout(n.retry);
+      n.retry = setTimeout(function () { reconnect(n); }, RECONNECT_MS);
+      if (n.peer.destroyed) return;
+      if (n.peer.disconnected) { try { n.peer.reconnect(); } catch (e) {} return; } // get back on the broker first
+      if (n.host || n.conn) return; // the host waits for the call; the joiner already has a call ringing
+      var c = n.peer.connect(PEER_PREFIX + n.code, { reliable: true });
+      c.on('open', function () {
+        if (net !== n || !n.lost || n.conn) { c.close(); return; }
+        attach(c);
+        c.send({ t: 'resume', token: n.token, got: n.recv });
+      });
+    }
+
+    // The host must stay reachable through the broker so the joiner can call back after a dropout.
+    function stayOnBroker(n) {
+      n.peer.on('disconnected', function () {
+        setTimeout(function () {
+          if (net === n && match && n.peer.disconnected && !n.peer.destroyed) try { n.peer.reconnect(); } catch (e) {}
+        }, 3000);
+      });
+    }
+
+    function resumed(theyGot) {
+      var n = net;
+      n.lost = false;
+      clearTimeout(n.retry);
+      clearTimeout(n.giveUp);
+      n.out.slice(theyGot).forEach(function (m) { n.conn.send(m); });
+      render();
+    }
+
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState !== 'visible' || !net || !match) return;
+      if (net.lost) reconnect(net);
+      else if (net.peer && net.peer.disconnected && !net.peer.destroyed) try { net.peer.reconnect(); } catch (e) {}
+    });
 
     function sendSelection() { send({ t: 'sel', tiles: Array.from(board.selected) }); }
 
-    function onDisconnect() {
+    function onDisconnect(how) {
       if (!match || match.phase === 'aborted') return;
       var who = net.other || 'Your friend';
       var midRound = match.phase !== 'roundover';
-      abort(who + ' left the game' + (midRound ? ' in the middle of a round, so it counts as a forfeit. You win!' : '.'), true);
+      abort(who + (how || ' left the game') + (midRound ? ' in the middle of a round, so it counts as a forfeit. You win!' : '.'), true);
     }
 
     function abort(text, calm) {
@@ -682,7 +790,8 @@
         if (msg.v !== PROTOCOL) { net.conn.send({ t: 'old' }); return; }
         net.other = cleanName(msg.name) || 'Friend';
         me = 0;
-        net.conn.send({ t: 'welcome', v: PROTOCOL, name: myOnlineName(), n: settings.tiles, oneDie: settings.oneDie });
+        net.token = randomHex();
+        net.conn.send({ t: 'welcome', v: PROTOCOL, name: myOnlineName(), n: settings.tiles, oneDie: settings.oneDie, token: net.token });
         startMatch([myOnlineName(), net.other], settings.tiles, settings.oneDie);
         return;
       }
@@ -690,6 +799,7 @@
         if (msg.v !== PROTOCOL) { netStatus('Your friend has a different version of the game. Both of you should reload the page.', true); teardownNet(); return; }
         if ([9, 10, 12].indexOf(msg.n) < 0) { netStatus('Bad game settings from host.', true); teardownNet(); return; }
         net.other = cleanName(msg.name) || 'Friend';
+        net.token = typeof msg.token === 'string' ? msg.token : '';
         me = 1;
         startMatch([net.other, myOnlineName()], msg.n, !!msg.oneDie);
         return;
@@ -697,6 +807,7 @@
       if (msg.t === 'old') { netStatus('Your friend has a different version of the game. Both of you should reload the page.', true); teardownNet(); return; }
       if (msg.t === 'full') { netStatus('That game already has two players.', true); teardownNet(); return; }
       if (msg.t === 'bye') { onDisconnect(); return; }
+      if (msg.t === 'resumed' && !net.host && net.lost) { resumed(msg.got); return; }
       if (msg.t === 'flag' && match) { abort("⚠ " + (net.other || 'Your friend') + "'s game stopped the match because yours sent a move that broke the rules. Reload the page and start a new game."); return; }
       if (!match || match.phase === 'aborted') return;
 
@@ -852,20 +963,30 @@
         else if (isMine(nxt)) { msg.textContent += 'Your turn next.'; advance = 'Start my turn'; }
         else msg.textContent += 'Waiting for ' + match.players[nxt].name + ' to start.';
       } else if (phase === 'roundover') {
-        var best = Math.min.apply(null, match.players.map(function (p) { return p.score; }));
+        var best = bestScore();
         var winners = [];
         match.players.forEach(function (p, i) { if (p.score === best) winners.push(i); });
         if (winners.length > 1) msg.textContent = 'Round ' + match.round + ' is a tie at ' + best + '.';
         else {
           var w = winners[0];
-          msg.textContent = (mode === 'online' && w === me ? 'You win' : match.players[w].name + ' wins') + ' round ' + match.round + ' with ' + best + '!';
+          var youW = mode === 'online' && w === me;
+          msg.textContent = best === 0
+            ? (youW ? 'You shut the box and win' : match.players[w].name + ' shut the box and wins') + ' round ' + match.round + '!'
+            : (youW ? 'You win' : match.players[w].name + ' wins') + ' round ' + match.round + ' with ' + best + '!';
           msg.classList.add(mode === 'online' && w !== me ? 'lose' : 'win');
         }
+        var ns = match.nextStarter;
+        msg.textContent += ' ' + (mode === 'online' && ns === me ? 'You go' : match.players[ns].name + ' goes') + ' first next round.';
         advance = 'Next round';
       } else if (phase === 'aborted') {
         msg.textContent = match.alert;
         msg.classList.add(match.alertCalm ? 'win' : 'lose');
         advance = 'Back to setup';
+      }
+      if (net && net.lost && phase !== 'aborted') {
+        msg.className = 'msg';
+        msg.textContent = 'Lost the connection to ' + (net.other || 'your friend') + '. Reconnecting…';
+        advance = '';
       }
 
       var playing = phase === 'roll' || phase === 'pick';
